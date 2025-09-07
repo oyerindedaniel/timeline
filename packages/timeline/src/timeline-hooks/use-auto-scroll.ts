@@ -1,15 +1,37 @@
 import { useRef, useCallback } from "react";
 
 interface UseAutoScrollOptions {
-  edgeThreshold?: number; // Distance from edge (px) where scroll starts
-  maxScrollSpeed?: number; // Max scroll speed (px per frame)
-  acceleration?: number; // Curve factor for acceleration near edge
+  /** Distance from edge (px) where scroll starts */
+  edgeThreshold?: number;
+
+  /** Max scroll speed in pixels per frame */
+  maxScrollSpeed?: number;
+
+  /** Curve factor for acceleration near edge */
+  acceleration?: number;
+
+  /**
+   * Extra margin outside the container (px) where mouse
+   * movement can still trigger auto-scroll.
+   * Defaults to 50.
+   */
+  activationMargin?: number;
 }
 
+/**
+ * Custom React hook for auto-scrolling a container
+ * when the mouse nears its edges.
+ *
+ * Supports acceleration, max speed, and an activation margin.
+ *
+ * @param options - Auto-scroll configuration
+ * @returns Handlers to control auto-scroll behavior
+ */
 export function useAutoScroll({
   edgeThreshold = 80,
   maxScrollSpeed = 25,
   acceleration = 2.5,
+  activationMargin = 50,
 }: UseAutoScrollOptions = {}) {
   const isInitializedRef = useRef(false);
   const rafIdRef = useRef<number | null>(null);
@@ -37,10 +59,11 @@ export function useAutoScroll({
 
     if (container && event) {
       const rect = container.getBoundingClientRect();
-      const MARGIN = 50;
       const rawMouseX: number = event.clientX;
-      const minX: number = rect.left - MARGIN;
-      const maxX: number = rect.right + MARGIN;
+
+      // Apply activation margin
+      const minX: number = rect.left - activationMargin;
+      const maxX: number = rect.right + activationMargin;
       const mouseX: number = Math.max(minX, Math.min(rawMouseX, maxX));
 
       const distanceFromLeft = mouseX - rect.left;
@@ -76,12 +99,22 @@ export function useAutoScroll({
     }
 
     rafIdRef.current = requestAnimationFrame(loop);
-  }, [calculateScrollSpeed, edgeThreshold]);
+  }, [calculateScrollSpeed, edgeThreshold, activationMargin]);
 
+  /**
+   * Call this inside a mouse move listener
+   * to update auto-scroll tracking.
+   */
   const handleAutoScroll = useCallback((event: MouseEvent) => {
     lastMouseEventRef.current = event;
   }, []);
 
+  /**
+   * Starts auto-scrolling for the given container.
+   *
+   * @param container - Scrollable container element
+   * @param onScrollChange - Callback fired when scroll changes
+   */
   const startAutoScroll = useCallback(
     (
       container: HTMLDivElement | null,
@@ -98,6 +131,9 @@ export function useAutoScroll({
     [loop]
   );
 
+  /**
+   * Stops auto-scrolling and cleans up listeners.
+   */
   const stopAutoScroll = useCallback(() => {
     isInitializedRef.current = false;
     containerRef.current = null;

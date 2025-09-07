@@ -12,6 +12,8 @@ import { useScale } from "./timeline-hooks/use-scale";
 import { useLazyRef } from "./hooks/use-lazy-ref";
 import { useStableHandler } from "./hooks/use-stable-handler";
 import { formatDurationDisplay } from "./utils/display";
+import { useComposableState } from "./hooks";
+import { generateTimelineId } from "./utils/generate-id";
 
 export interface ConstraintContext {
   currentTime: number;
@@ -30,11 +32,59 @@ export interface LayerConstraintContext {
   timeline: TimelineContextValue;
 }
 
+export interface TimelineRootProps
+  extends React.HTMLAttributes<HTMLDivElement> {
+  children: React.ReactNode;
+  currentTime?: number;
+  defaultCurrentTime?: number;
+  onTimeChange?: (time: number, e: React.SyntheticEvent) => void;
+  timelineBounds?: number;
+  zoom?: number;
+  defaultZoom?: number;
+  onZoomChange?: (zoom: number) => void;
+  step?: number;
+  minGap?: number;
+  constraints?: {
+    leftHandle?: (position: number, context: ConstraintContext) => number;
+    rightHandle?: (position: number, context: ConstraintContext) => number;
+    playhead?: (position: number, context: ConstraintContext) => number;
+  };
+  onPlay?: (e: React.SyntheticEvent) => void;
+  onPause?: (e: React.SyntheticEvent) => void;
+  onSeek?: (time: number, e: React.SyntheticEvent) => void;
+  orientation?: "horizontal" | "vertical";
+  scaleConfig?:
+    | {
+        type: "fixed";
+        fixedPxPerSecond: number;
+      }
+    | {
+        type: "container";
+      }
+    | {
+        type: "auto";
+        fixedPxPerSecond: number;
+        minPxPerSecond?: number;
+        maxPxPerSecond?: number;
+      };
+  autoScrollConfig?: {
+    edgeThreshold?: number;
+    maxScrollSpeed?: number;
+    acceleration?: number;
+    activationMargin?: number;
+  };
+}
+
 export interface TimelineContextValue {
-  // Core state
-  currentTime: number;
   min: number;
   max: number;
+
+  // User configuration
+  timelineBounds: number;
+  zoom: number;
+
+  // Core state
+  currentTime: number;
   step: number;
   orientation: "horizontal" | "vertical";
 
@@ -45,6 +95,18 @@ export interface TimelineContextValue {
     rightHandle?: (position: number, context: ConstraintContext) => number;
     playhead?: (position: number, context: ConstraintContext) => number;
   };
+
+  // Track management
+  tracks: Map<string, Track>;
+  registerTrack: (id: string, track: TrackContextValue) => void;
+  unregisterTrack: (id: string) => void;
+  getTrackAtPosition: (x: number, y: number) => string | null;
+
+  // Dynamic bounds calculation
+  recalculateBounds: () => void;
+
+  // Zoom functionality
+  setZoom: (zoom: number) => void;
 
   // Refs
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -84,11 +146,6 @@ export interface TimelineContextValue {
   onPause?: (e: React.SyntheticEvent) => void;
   onSeek?: (time: number, e: React.SyntheticEvent) => void;
 
-  // Track management
-  tracks: Map<string, TrackContextValue>;
-  registerTrack: (id: string, track: TrackContextValue) => void;
-  unregisterTrack: (id: string) => void;
-
   // Handle positions for constraints
   leftHandlePosition: number;
   rightHandlePosition: number;
@@ -108,10 +165,17 @@ export interface TrackContextValue {
     context: LayerConstraintContext
   ) => { start: number; end: number };
 
+  ref: React.RefObject<HTMLElement | null>;
+
   // Layer management
   layers: Map<string, LayerContextValue>;
   registerLayer: (id: string, layer: LayerContextValue) => void;
   unregisterLayer: (id: string) => void;
+}
+
+export interface Track extends TrackContextValue {
+  yPosition?: number;
+  isBeingDragged?: boolean;
 }
 
 export interface LayerContextValue {
@@ -159,33 +223,15 @@ export function useLayerContext() {
   return context;
 }
 
-interface TimelineRootProps {
-  children: React.ReactNode;
-  currentTime?: number;
-  defaultCurrentTime?: number;
-  onTimeChange?: (time: number, e: React.SyntheticEvent) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-  minGap?: number;
-  constraints?: {
-    leftHandle?: (position: number, context: ConstraintContext) => number;
-    rightHandle?: (position: number, context: ConstraintContext) => number;
-    playhead?: (position: number, context: ConstraintContext) => number;
-  };
-  onPlay?: (e: React.SyntheticEvent) => void;
-  onPause?: (e: React.SyntheticEvent) => void;
-  onSeek?: (time: number, e: React.SyntheticEvent) => void;
-  orientation?: "horizontal" | "vertical";
-}
-
 export function TimelineRootProvider({
   children,
   currentTime: controlledTime,
   defaultCurrentTime = 0,
   onTimeChange,
-  min = 0,
-  max = 100000,
+  timelineBounds = Infinity,
+  zoom: controlledZoom,
+  defaultZoom = 1,
+  onZoomChange,
   step = 100,
   minGap = 1000,
   constraints,
@@ -193,13 +239,35 @@ export function TimelineRootProvider({
   onPause,
   onSeek,
   orientation = "horizontal",
+  scaleConfig,
+  autoScrollConfig,
 }: TimelineRootProps) {
-  const [internalTime, setInternalTime] = useState(defaultCurrentTime);
-  const [leftHandlePosition, setLeftHandlePosition] = useState(0);
-  const [rightHandlePosition, setRightHandlePosition] = useState(max);
-  const [announcement, setAnnouncement] = useState("");
+  const DEFAULT_TIMELINE_MAX = 100_000;
 
-  const currentTime = controlledTime ?? internalTime;
+  const [currentTime, setCurrentTime] = useComposableState({
+    defaultValue: defaultCurrentTime,
+    controlled: controlledTime,
+    onChange: onTimeChange as any, //TODO: Review
+  });
+
+  const [zoom, setZoom] = useComposableState({
+    defaultValue: defaultZoom,
+    controlled: controlledZoom,
+    onChange: onZoomChange,
+  });
+
+  const [announcement, setAnnouncement] = useState("");
+  const [leftHandlePosition, setLeftHandlePosition] = useState(0);
+  const [rightHandlePosition, setRightHandlePosition] =
+    useState(DEFAULT_TIMELINE_MAX);
+
+  const [min] = useState(0);
+  const [max, setMax] = useState(DEFAULT_TIMELINE_MAX);
+
+  const finalMax = Math.max(
+    max,
+    timelineBounds === Infinity ? max : timelineBounds
+  );
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -211,30 +279,109 @@ export function TimelineRootProvider({
   const timelineId = useId();
   const instructionsId = useId();
 
+  const tracks = useLazyRef(() => new Map<string, Track>());
+
+  const defaultScaleConfig = {
+    type: "auto" as const,
+    fixedPxPerSecond: 50 * zoom,
+    maxPxPerSecond: 100 * zoom,
+  };
+
+  const finalScaleConfig = scaleConfig
+    ? {
+        ...scaleConfig,
+        ...(scaleConfig.type !== "container" && {
+          fixedPxPerSecond: (scaleConfig.fixedPxPerSecond || 50) * zoom,
+          ...(scaleConfig.type === "auto" && {
+            maxPxPerSecond: (scaleConfig.maxPxPerSecond || 100) * zoom,
+          }),
+        }),
+      }
+    : defaultScaleConfig;
+
   const { pxPerMsRef, recalc } = useScale({
     containerRef,
-    durationMs: max,
-    type: "auto",
-    fixedPxPerSecond: 50,
-    maxPxPerSecond: 100,
+    durationMs: finalMax,
+    ...finalScaleConfig,
   });
 
-  const { handleAutoScroll, startAutoScroll, stopAutoScroll } = useAutoScroll({
+  const defaultAutoScrollConfig = {
     edgeThreshold: 30,
     maxScrollSpeed: 10,
     acceleration: 1.2,
-  });
+    activationMargin: 50,
+  };
 
-  const tracks = useLazyRef(() => new Map<string, TrackContextValue>());
+  const finalAutoScrollConfig = autoScrollConfig ?? defaultAutoScrollConfig;
+  const { handleAutoScroll, startAutoScroll, stopAutoScroll } = useAutoScroll(
+    finalAutoScrollConfig
+  );
 
-  const stableOnTimeChange = useStableHandler(onTimeChange);
-  const stableOnPlay = useStableHandler(onPlay);
-  const stableOnPause = useStableHandler(onPause);
-  const stableOnSeek = useStableHandler(onSeek);
+  const recalculateBounds = useCallback(() => {
+    let maxDuration = DEFAULT_TIMELINE_MAX;
+
+    for (const track of tracks.current.values()) {
+      for (const layer of track.layers.values()) {
+        maxDuration = Math.max(maxDuration, layer.end);
+      }
+    }
+
+    setMax(maxDuration);
+
+    requestAnimationFrame(() => {
+      recalc();
+    });
+  }, [recalc]);
+
+  const getTrackAtPosition = useCallback(
+    (x: number, y: number): string | null => {
+      const container = containerRef.current;
+      if (!container) return null;
+
+      const containerRect = container.getBoundingClientRect();
+      const relativeY = y - containerRect.top;
+
+      let closestTrack: string | null = null;
+      let closestDistance = Infinity;
+
+      for (const [trackId, trackData] of tracks.current.entries()) {
+        if (trackData.yPosition !== undefined) {
+          const distance = Math.abs(trackData.yPosition - relativeY);
+          if (distance < closestDistance) {
+            closestDistance = distance;
+            closestTrack = trackId;
+          }
+        }
+      }
+
+      return closestTrack;
+    },
+    []
+  );
+
+  const registerTrack = useCallback(
+    (id: string, track: TrackContextValue) => {
+      const extendedTrack: Track = {
+        ...track,
+        yPosition: 0,
+        isBeingDragged: false,
+      };
+      tracks.current.set(id, extendedTrack);
+      recalculateBounds();
+    },
+    [recalculateBounds]
+  );
+
+  const unregisterTrack = useCallback(
+    (id: string) => {
+      tracks.current.delete(id);
+      recalculateBounds();
+    },
+    [recalculateBounds]
+  );
 
   const announceChange = useCallback((message: string) => {
     setAnnouncement(message);
-    // Clear announcement after it is read
     setTimeout(() => setAnnouncement(""), 100);
   }, []);
 
@@ -255,30 +402,23 @@ export function TimelineRootProvider({
 
   const handleTimeChange = useCallback(
     (time: number, e: React.SyntheticEvent) => {
-      const clampedTime = Math.max(min, Math.min(max, time));
-      if (controlledTime === undefined) {
-        setInternalTime(clampedTime);
-      }
-      stableOnTimeChange?.(clampedTime, e);
+      const clampedTime = Math.max(min, Math.min(finalMax, time));
+      setCurrentTime(clampedTime);
       announceChange(`Time changed to ${formatDurationDisplay(clampedTime)}`);
     },
-    [min, max, controlledTime, stableOnTimeChange, announceChange]
+    [min, finalMax, setCurrentTime, announceChange]
   );
 
   const msToPixels = useCallback((ms: number) => ms * pxPerMsRef.current, []);
   const pixelsToMs = useCallback((px: number) => px / pxPerMsRef.current, []);
   const clampTime = useCallback(
-    (time: number) => Math.max(min, Math.min(max, time)),
-    [min, max]
+    (time: number) => Math.max(min, Math.min(finalMax, time)),
+    [min, finalMax]
   );
 
-  const registerTrack = useCallback((id: string, track: TrackContextValue) => {
-    tracks.current.set(id, track);
-  }, []);
-
-  const unregisterTrack = useCallback((id: string) => {
-    tracks.current.delete(id);
-  }, []);
+  React.useEffect(() => {
+    recalc();
+  }, [zoom, recalc]);
 
   React.useEffect(() => {
     if (announcementRef.current && announcement) {
@@ -288,13 +428,21 @@ export function TimelineRootProvider({
 
   const contextValue: TimelineContextValue = useMemo(
     () => ({
-      currentTime,
       min,
-      max,
+      max: finalMax,
+      timelineBounds,
+      zoom,
+      setZoom,
+      currentTime,
       step,
       minGap,
       constraints,
       orientation,
+      tracks: tracks.current,
+      registerTrack,
+      unregisterTrack,
+      getTrackAtPosition,
+      recalculateBounds,
       containerRef,
       scrollContainerRef,
       leftHandleRef,
@@ -312,28 +460,33 @@ export function TimelineRootProvider({
       startAutoScroll,
       stopAutoScroll,
       onTimeChange: handleTimeChange,
-      onPlay: stableOnPlay,
-      onPause: stableOnPause,
-      onSeek: stableOnSeek,
+      onPlay,
+      onPause,
+      onSeek,
       msToPixels,
       pixelsToMs,
       clampTime,
-      tracks: tracks.current,
-      registerTrack,
-      unregisterTrack,
       leftHandlePosition,
       rightHandlePosition,
-      setLeftHandlePosition,
+      setLeftHandlePosition: (pos: number) =>
+        setLeftHandlePosition(Math.max(0, pos)),
       setRightHandlePosition,
     }),
     [
-      currentTime,
       min,
-      max,
+      finalMax,
+      timelineBounds,
+      zoom,
+      setZoom,
+      currentTime,
       step,
       minGap,
       constraints,
       orientation,
+      registerTrack,
+      unregisterTrack,
+      getTrackAtPosition,
+      recalculateBounds,
       timelineId,
       instructionsId,
       announceChange,
@@ -345,14 +498,12 @@ export function TimelineRootProvider({
       startAutoScroll,
       stopAutoScroll,
       handleTimeChange,
-      stableOnPlay,
-      stableOnPause,
-      stableOnSeek,
+      onPlay,
+      onPause,
+      onSeek,
       msToPixels,
       pixelsToMs,
       clampTime,
-      registerTrack,
-      unregisterTrack,
       leftHandlePosition,
       rightHandlePosition,
     ]
@@ -361,7 +512,6 @@ export function TimelineRootProvider({
   return (
     <TimelineContext.Provider value={contextValue}>
       {children}
-      {/* Live region for announcements */}
       <div
         ref={announcementRef}
         aria-live="assertive"
@@ -375,7 +525,7 @@ export function TimelineRootProvider({
 // Track Provider
 interface TrackProviderProps {
   children: React.ReactNode;
-  id: string;
+  id?: string;
   label?: string;
   selected?: boolean;
   onSelect?: (id: string, e: React.MouseEvent) => void;
@@ -385,18 +535,22 @@ interface TrackProviderProps {
     proposedEnd: number,
     context: LayerConstraintContext
   ) => { start: number; end: number };
+  ref?: React.RefObject<HTMLDivElement | null>;
 }
 
 export function TrackProvider({
   children,
-  id,
+  id: providedId,
   label,
   selected,
   onSelect,
   onConstrainLayer,
+  ref,
 }: TrackProviderProps) {
   const timeline = useTimelineContext();
   const layers = useLazyRef(() => new Map<string, LayerContextValue>());
+
+  const id = providedId ?? generateTimelineId("track");
 
   const stableOnSelect = useStableHandler(onSelect);
   const stableOnConstrainLayer = useStableHandler(onConstrainLayer);
@@ -404,13 +558,18 @@ export function TrackProvider({
   const registerLayer = useCallback(
     (layerId: string, layer: LayerContextValue) => {
       layers.current.set(layerId, layer);
+      timeline.recalculateBounds();
     },
-    []
+    [timeline]
   );
 
-  const unregisterLayer = useCallback((layerId: string) => {
-    layers.current.delete(layerId);
-  }, []);
+  const unregisterLayer = useCallback(
+    (layerId: string) => {
+      layers.current.delete(layerId);
+      timeline.recalculateBounds();
+    },
+    [timeline]
+  );
 
   const contextValue: TrackContextValue = useMemo(
     () => ({
@@ -419,6 +578,7 @@ export function TrackProvider({
       selected,
       onSelect: stableOnSelect,
       onConstrainLayer: stableOnConstrainLayer,
+      ref: ref || { current: null },
       layers: layers.current,
       registerLayer,
       unregisterLayer,
@@ -429,12 +589,12 @@ export function TrackProvider({
       selected,
       stableOnSelect,
       stableOnConstrainLayer,
+      ref,
       registerLayer,
       unregisterLayer,
     ]
   );
 
-  // Register/unregister with timeline
   React.useEffect(() => {
     timeline.registerTrack(id, contextValue);
     return () => timeline.unregisterTrack(id);
@@ -450,7 +610,7 @@ export function TrackProvider({
 // Layer Provider
 interface LayerProviderProps {
   children: React.ReactNode;
-  id: string;
+  id?: string;
   start: number;
   end: number;
   onResizeStart?: (e: React.MouseEvent) => void;
@@ -464,8 +624,8 @@ interface LayerProviderProps {
 
 export function LayerProvider({
   children,
-  id,
-  start,
+  id: providedId,
+  start: rawStart,
   end,
   onResizeStart,
   onResize,
@@ -473,6 +633,9 @@ export function LayerProvider({
   tooltipState,
 }: LayerProviderProps) {
   const track = useTrackContext();
+
+  const id = providedId ?? generateTimelineId("layer");
+  const start = Math.max(0, rawStart);
 
   const stableOnResizeStart = useStableHandler(onResizeStart);
   const stableOnResize = useStableHandler(onResize);
@@ -499,7 +662,6 @@ export function LayerProvider({
     ]
   );
 
-  // Register/unregister with track
   React.useEffect(() => {
     track.registerLayer(id, contextValue);
     return () => track.unregisterLayer(id);
@@ -510,4 +672,28 @@ export function LayerProvider({
       {children}
     </LayerContext.Provider>
   );
+}
+
+// Timeline Reorder Context
+export interface ReorderContextValue {
+  dragState: {
+    draggedTrackId: string | null;
+    dragOverTrackId: string | null;
+    isDragging: boolean;
+    overlayPosition: { x: number; y: number };
+  };
+  draggedTrack: TrackContextValue | null;
+  dragOverTrack: TrackContextValue | null;
+  handleTrackDragStart: (trackId: string, e: React.MouseEvent) => void;
+  orderedTrackIds: string[];
+}
+
+export const ReorderContext = createContext<ReorderContextValue | null>(null);
+
+export function useReorderContext() {
+  const context = useContext(ReorderContext);
+  if (!context) {
+    throw new Error("Reorder components must be wrapped in <Timeline.Reorder>");
+  }
+  return context;
 }

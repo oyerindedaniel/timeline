@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
 
-export interface UseControllableStateProps<T> {
-  value?: T;
-  defaultValue?: T;
+interface UseComposableStateOptions<T> {
+  defaultValue: T;
+  controlled?: T;
   onChange?: (value: T) => void;
 }
 
@@ -10,31 +10,31 @@ export interface UseControllableStateProps<T> {
  * Creates a controllable state that can be either controlled or uncontrolled
  * Similar to React's built-in controlled/uncontrolled pattern
  */
-export function useControllableState<T>({
-  value,
-  defaultValue,
-  onChange,
-}: UseControllableStateProps<T>) {
-  const [uncontrolledValue, setUncontrolledValue] = useState(defaultValue);
 
-  const isControlled = value !== undefined;
-  const currentValue = isControlled ? value : uncontrolledValue;
+export function useComposableState<T>({
+  defaultValue,
+  controlled,
+  onChange,
+}: UseComposableStateOptions<T>) {
+  const [internalValue, setInternalValue] = useState(defaultValue);
+  const isControlled = controlled !== undefined;
+  const value = isControlled ? controlled : internalValue;
 
   const setValue = useCallback(
     (newValue: T | ((prev: T) => T)) => {
-      const nextValue =
+      const resolvedValue =
         typeof newValue === "function"
-          ? (newValue as (prev: T) => T)(currentValue)
+          ? (newValue as (prev: T) => T)(value)
           : newValue;
 
       if (!isControlled) {
-        setUncontrolledValue(nextValue);
+        setInternalValue(resolvedValue);
       }
 
-      onChange?.(nextValue);
+      onChange?.(resolvedValue);
     },
-    [isControlled, currentValue, onChange]
+    [isControlled, value, onChange]
   );
 
-  return [currentValue, setValue] as const;
+  return [value, setValue] as const;
 }

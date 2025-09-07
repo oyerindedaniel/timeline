@@ -2,7 +2,7 @@ import { useRef, useCallback, useEffect } from "react";
 import { useLatestValue } from "../hooks/use-latest-value";
 
 /**
- * Fixed scaling configuration - always uses the specified pixels per second
+ * Fixed scaling configuration - always uses the specified pixels per second.
  */
 type FixedScalingConfig = {
   type: "fixed";
@@ -10,15 +10,17 @@ type FixedScalingConfig = {
 };
 
 /**
- * Container-based scaling configuration - scales based on container width
+ * Container-based scaling configuration - scales timeline
+ * proportionally to the container width.
  */
 type ContainerScalingConfig = {
   type: "container";
 };
 
 /**
- * Auto scaling configuration - automatically switches between fixed and container scaling
- * based on container size and minimum usability constraints
+ * Auto scaling configuration - chooses between fixed scaling
+ * and container-based scaling depending on container width and
+ * min/max usability constraints.
  */
 type AutoScalingConfig = {
   type: "auto";
@@ -27,19 +29,50 @@ type AutoScalingConfig = {
   maxPxPerSecond?: number;
 };
 
+/**
+ * Union of supported scaling configurations.
+ */
 type UseScaleConfig =
   | FixedScalingConfig
   | ContainerScalingConfig
   | AutoScalingConfig;
 
+/**
+ * Possible scaling modes currently in effect.
+ */
 type ScalingType = "fixed" | "container" | "auto";
 
+/**
+ * Return type for the `useScale` hook.
+ */
 interface UseScaleReturn {
+  /** Mutable ref containing pixels per millisecond scaling value */
   pxPerMsRef: React.RefObject<number>;
+
+  /** Recalculate scaling immediately */
   recalc: () => void;
+
+  /** Which scaling strategy is currently active */
   currentScalingType: ScalingType;
 }
 
+/**
+ * React hook for calculating timeline scaling (pixels per millisecond).
+ * Supports fixed, container-based, and auto scaling strategies.
+ *
+ * - **Fixed:** Always uses a constant pixels-per-second value.
+ * - **Container:** Fits the entire duration to the container width.
+ * - **Auto:** Switches between container scaling and fixed scaling
+ *   depending on size and min/max constraints.
+ *
+ * Scaling is recalculated on mount and on window resize
+ * when using "container" or "auto" modes.
+ *
+ * @param containerRef - Ref to the container element
+ * @param durationMs - Total duration of the timeline in milliseconds
+ * @param config - Scaling configuration (fixed, container, or auto)
+ * @returns {UseScaleReturn} Scaling ref, recalc function, and active scaling type
+ */
 export function useScale({
   containerRef,
   durationMs,

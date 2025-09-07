@@ -2409,9 +2409,12 @@ export const Timeline = {
   Playhead: TimelinePlayhead,
   LeftHandle: TimelineLeftHandle,
   RightHandle: TimelineRightHandle,
+  ResizeHandle: TimelineResizeHandle,
+  Reorder: Object.assign(TimelineReorder, {
+    Overlay: TimelineReorderOverlay,
+  }),
   Track: Object.assign(TimelineTrack, {
     Layer: TimelineTrackLayer,
-    LayerTooltip: TimelineTrackLayerTooltip,
   }),
 };
 
@@ -2422,7 +2425,10 @@ export type {
   TimelinePlayheadProps,
   TimelineLeftHandleProps,
   TimelineRightHandleProps,
+  TimelineReorderProps,
+  TimelineReorderOverlayProps,
   TimelineTrackProps,
   TimelineTrackLayerProps,
   TimelineTrackLayerTooltipProps,
+  TimelineResizeHandleProps,
 };

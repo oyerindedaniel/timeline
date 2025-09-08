@@ -1,3 +1,5 @@
+"use client";
+
 import React, {
   forwardRef,
   useRef,
@@ -8,7 +10,6 @@ import React, {
   useMemo,
 } from "react";
 import { createPortal, flushSync } from "react-dom";
-import { Button } from "./components/button";
 import { cn } from "./utils/cn";
 import {
   TimelineRootProvider,
@@ -28,17 +29,18 @@ import {
   getScrollState,
 } from "./utils/timeline-utils";
 import { Slot } from "./utils/primitives";
+
+import { GripVertical } from "./icons";
+import { generateTimelineId } from "./utils/generate-id";
+import { useAutoScroll } from "./timeline-hooks/use-auto-scroll";
 import type {
   ConstraintContext,
   LayerConstraintContext,
-  LayerContextValue,
   ReorderContextValue,
   TimelineContextValue,
   TimelineRootProps,
   TrackContextValue,
-} from "./context";
-import { GripVertical } from "./icons";
-import { generateTimelineId } from "./utils/generate-id";
+} from "./types";
 
 type AsChildProps<DefaultElementProps> =
   | ({ asChild?: false } & DefaultElementProps)
@@ -90,7 +92,7 @@ const TimelineRoot = forwardRef<HTMLDivElement, TimelineRootProps>(
           aria-label="Timeline editor"
           aria-describedby={instructionsId}
           className={cn(
-            "flex relative flex-col gap-2 w-full focus-within:outline-none",
+            "flex bg-yellow-500 relative flex-col gap-2 w-full focus-within:outline-none",
             className
           )}
           {...props}
@@ -447,15 +449,15 @@ const TimelinePlayhead = forwardRef<HTMLDivElement, TimelinePlayheadProps>(
         startAutoScroll(scrollContainer, (scrollDelta) => {
           const { canScrollLeft, canScrollRight } =
             getScrollState(scrollContainer);
-          const isScrollingLeft = scrollDelta < 0;
-          const isScrollingRight = scrollDelta > 0;
+          const isScrollingLeft = scrollDelta.x < 0;
+          const isScrollingRight = scrollDelta.x > 0;
           const shouldAllowAutoScroll =
             (isScrollingLeft && canScrollLeft) ||
             (isScrollingRight && canScrollRight);
 
-          if (Math.abs(scrollDelta) > 0 && shouldAllowAutoScroll) {
+          if (Math.abs(scrollDelta.x) > 0 && shouldAllowAutoScroll) {
             const currentLeft = parseFloat(playhead.style.left || "0");
-            const newLeft = Math.max(0, currentLeft + scrollDelta);
+            const newLeft = Math.max(0, currentLeft + scrollDelta.x);
             const timeMs = pixelsToMs(newLeft);
 
             const constrainedTime = applyPlayheadConstraints(timeMs);
@@ -605,7 +607,10 @@ TimelinePlayhead.displayName = "Timeline.Playhead";
 interface TimelineLeftHandleProps
   extends Omit<React.HTMLAttributes<HTMLDivElement>, "onDrag"> {
   onDragStart?: (e: React.MouseEvent<HTMLDivElement>) => void;
-  onDrag?: (position: number, e: React.MouseEvent<HTMLDivElement>) => void;
+  onDrag?: (
+    position: number,
+    e: React.MouseEvent<HTMLDivElement> | React.KeyboardEvent<HTMLDivElement>
+  ) => void;
   onDragEnd?: (e: React.MouseEvent<HTMLDivElement>) => void;
 }
 
@@ -708,7 +713,7 @@ const TimelineLeftHandle = forwardRef<HTMLDivElement, TimelineLeftHandleProps>(
             const constrainedLeft = applyLeftHandleConstraints(newPosLeft);
 
             setLeftHandlePosition(constrainedLeft);
-            stableOnDrag?.(constrainedLeft, e as any);
+            stableOnDrag?.(constrainedLeft, e);
             announceChange(
               `Left handle moved to ${formatDurationDisplay(constrainedLeft)}`
             );
@@ -719,7 +724,7 @@ const TimelineLeftHandle = forwardRef<HTMLDivElement, TimelineLeftHandleProps>(
             const constrainedRight = applyLeftHandleConstraints(newPosRight);
 
             setLeftHandlePosition(constrainedRight);
-            stableOnDrag?.(constrainedRight, e as any);
+            stableOnDrag?.(constrainedRight, e);
             announceChange(
               `Left handle moved to ${formatDurationDisplay(constrainedRight)}`
             );
@@ -728,7 +733,7 @@ const TimelineLeftHandle = forwardRef<HTMLDivElement, TimelineLeftHandleProps>(
             e.preventDefault();
             const constrainedHome = applyLeftHandleConstraints(min);
             setLeftHandlePosition(constrainedHome);
-            stableOnDrag?.(constrainedHome, e as any);
+            stableOnDrag?.(constrainedHome, e);
             announceChange(`Left handle moved to start`);
             break;
           case "Enter":
@@ -776,12 +781,12 @@ const TimelineLeftHandle = forwardRef<HTMLDivElement, TimelineLeftHandleProps>(
           const { canScrollLeft, canScrollRight } =
             getScrollState(scrollContainer);
           const shouldAllowAutoScroll =
-            (scrollDelta < 0 && canScrollLeft) ||
-            (scrollDelta > 0 && canScrollRight);
+            (scrollDelta.x < 0 && canScrollLeft) ||
+            (scrollDelta.x > 0 && canScrollRight);
 
-          if (Math.abs(scrollDelta) > 0 && shouldAllowAutoScroll) {
+          if (Math.abs(scrollDelta.x) > 0 && shouldAllowAutoScroll) {
             const currentPos = parseFloat(leftHandle.style.left || "0");
-            const newPos = currentPos + scrollDelta;
+            const newPos = currentPos + scrollDelta.x;
             const newTime = pixelsToMs(newPos);
 
             const constrainedTime = applyLeftHandleConstraints(newTime);
@@ -946,7 +951,10 @@ TimelineLeftHandle.displayName = "Timeline.LeftHandle";
 interface TimelineRightHandleProps
   extends Omit<React.HTMLAttributes<HTMLDivElement>, "onDrag"> {
   onDragStart?: (e: React.MouseEvent<HTMLDivElement>) => void;
-  onDrag?: (position: number, e: React.MouseEvent<HTMLDivElement>) => void;
+  onDrag?: (
+    position: number,
+    e: React.MouseEvent<HTMLDivElement> | React.KeyboardEvent<HTMLDivElement>
+  ) => void;
   onDragEnd?: (e: React.MouseEvent<HTMLDivElement>) => void;
 }
 
@@ -1052,7 +1060,7 @@ const TimelineRightHandle = forwardRef<
             const constrainedLeft = applyRightHandleConstraints(newPosLeft);
 
             setRightHandlePosition(constrainedLeft);
-            stableOnDrag?.(constrainedLeft, e as any);
+            stableOnDrag?.(constrainedLeft, e);
             announceChange(
               `Right handle moved to ${formatDurationDisplay(constrainedLeft)}`
             );
@@ -1063,7 +1071,7 @@ const TimelineRightHandle = forwardRef<
             const constrainedRight = applyRightHandleConstraints(newPosRight);
 
             setRightHandlePosition(constrainedRight);
-            stableOnDrag?.(constrainedRight, e as any);
+            stableOnDrag?.(constrainedRight, e);
             announceChange(
               `Right handle moved to ${formatDurationDisplay(constrainedRight)}`
             );
@@ -1072,7 +1080,7 @@ const TimelineRightHandle = forwardRef<
             e.preventDefault();
             const constrainedEnd = applyRightHandleConstraints(max);
             setRightHandlePosition(constrainedEnd);
-            stableOnDrag?.(constrainedEnd, e as any);
+            stableOnDrag?.(constrainedEnd, e);
             announceChange(`Right handle moved to end`);
             break;
           case "Enter":
@@ -1120,14 +1128,14 @@ const TimelineRightHandle = forwardRef<
           const { canScrollLeft, canScrollRight } =
             getScrollState(scrollContainer);
           const shouldAllowAutoScroll =
-            (scrollDelta < 0 && canScrollLeft) ||
-            (scrollDelta > 0 && canScrollRight);
+            (scrollDelta.x < 0 && canScrollLeft) ||
+            (scrollDelta.x > 0 && canScrollRight);
 
-          if (Math.abs(scrollDelta) > 0 && shouldAllowAutoScroll) {
+          if (Math.abs(scrollDelta.x) > 0 && shouldAllowAutoScroll) {
             const currentPos = parseFloat(
               rightHandle.style.left || `${msToPixels(max)}`
             );
-            const newPos = currentPos + scrollDelta;
+            const newPos = currentPos + scrollDelta.x;
             const newTime = pixelsToMs(newPos);
 
             const constrainedTime = applyRightHandleConstraints(newTime);
@@ -1319,6 +1327,18 @@ const TimelineReorder = forwardRef<HTMLDivElement, TimelineReorderProps>(
       Array.from(tracks.keys())
     );
 
+    const { handleAutoScroll, startAutoScroll, stopAutoScroll } = useAutoScroll(
+      {
+        edgeThreshold: 30,
+        maxScrollSpeed: 10,
+        acceleration: 1.2,
+        activationMargin: 50,
+        enableVertical: true,
+        verticalEdgeThreshold: 40,
+        maxVerticalScrollSpeed: 15,
+      }
+    );
+
     const [dragState, setDragState] = useState<{
       draggedTrackId: string | null;
       dragOverTrackId: string | null;
@@ -1334,9 +1354,9 @@ const TimelineReorder = forwardRef<HTMLDivElement, TimelineReorderProps>(
     const reorderRef = useRef<HTMLDivElement>(null);
     const composedRef = useComposedRefs(ref, reorderRef);
 
-    const trackPositions = useRef<Map<string, { y: number; height: number }>>(
-      new Map()
-    );
+    const trackPositions = useRef<
+      Map<string, { y: number; height: number; x: number; width: number }>
+    >(new Map());
 
     const draggedTrack = dragState.draggedTrackId
       ? tracks.get(dragState.draggedTrackId) || null
@@ -1355,6 +1375,8 @@ const TimelineReorder = forwardRef<HTMLDivElement, TimelineReorderProps>(
           trackPositions.current.set(trackId, {
             y: rect.top - containerRect.top,
             height: rect.height,
+            x: rect.left - containerRect.left,
+            width: rect.width,
           });
         }
       }
@@ -1526,7 +1548,8 @@ const TimelineReorder = forwardRef<HTMLDivElement, TimelineReorderProps>(
 TimelineReorder.displayName = "Timeline.Reorder";
 
 // Timeline Reorder Overlay
-interface TimelineReorderOverlayProps {
+interface TimelineReorderOverlayProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "children"> {
   children: (context: {
     draggedTrack: TrackContextValue | null;
     dragOverTrack: TrackContextValue | null;
@@ -1537,9 +1560,10 @@ interface TimelineReorderOverlayProps {
   }) => React.ReactNode;
 }
 
-const TimelineReorderOverlay: React.FC<TimelineReorderOverlayProps> = ({
-  children,
-}) => {
+const TimelineReorderOverlay = forwardRef<
+  HTMLDivElement,
+  TimelineReorderOverlayProps
+>(({ children, ...rest }, ref) => {
   const timeline = useTimelineContext();
   const reorder = useReorderContext();
 
@@ -1552,9 +1576,30 @@ const TimelineReorderOverlay: React.FC<TimelineReorderOverlayProps> = ({
     timeline,
   });
 
-  return createPortal(<div>{overlayContent}</div>, document.body);
-};
-TimelineReorderOverlay.displayName = "Timeline.Reorder.Overlay";
+  const overlayPosition = reorder.dragState.overlayPosition;
+
+  if (typeof document === "undefined") {
+    // SSR-safe: render nothing on server
+    return null;
+  }
+
+  return createPortal(
+    <div
+      ref={ref}
+      style={{
+        position: "absolute",
+        left: overlayPosition.x,
+        top: overlayPosition.y,
+      }}
+      {...rest}
+    >
+      {overlayContent}
+    </div>,
+    document.body
+  );
+});
+
+TimelineReorderOverlay.displayName = "TimelineReorderOverlay";
 
 // Timeline Resize Handle
 interface TimelineResizeHandleProps
@@ -1636,7 +1681,7 @@ interface TimelineTrackBaseProps {
   id: string;
   label?: string;
   selected?: boolean;
-  onSelect?: (id: string, e: React.MouseEvent) => void;
+  onSelect?: (id: string, e: React.MouseEvent | React.KeyboardEvent) => void;
   onConstrainLayer?: (
     layerId: string,
     proposedStart: number,
@@ -1688,7 +1733,7 @@ const TimelineTrack = forwardRef<HTMLDivElement, TimelineTrackProps>(
           case "Enter":
           case " ":
             e.preventDefault();
-            stableOnSelect?.(id, e as any);
+            stableOnSelect?.(id, e);
             announceChange(`Track ${label || id} selected`);
             break;
         }
@@ -1758,15 +1803,55 @@ const TimelineTrack = forwardRef<HTMLDivElement, TimelineTrackProps>(
 );
 TimelineTrack.displayName = "Timeline.Track";
 
+interface TimelineTrackLabelBaseProps
+  extends React.HTMLAttributes<HTMLDivElement> {}
+
+type TimelineTrackLabelProps = AsChildProps<
+  TimelineTrackLabelBaseProps & React.HTMLAttributes<HTMLDivElement>
+>;
+
+const TimelineTrackLabel = forwardRef<HTMLDivElement, TimelineTrackLabelProps>(
+  ({ asChild = false, children, className, ...props }, ref) => {
+    const track = useTrackContext();
+    const labelId = useId();
+
+    const labelProps = {
+      ref,
+      id: labelId,
+      className: cn(
+        "text-sm font-medium text-foreground-default truncate",
+        className
+      ),
+      "data-track-label": track.id,
+      ...props,
+    };
+
+    if (asChild && React.isValidElement(children)) {
+      return <Slot {...labelProps}>{children}</Slot>;
+    }
+
+    return <div {...labelProps}>{children || track.label || track.id}</div>;
+  }
+);
+TimelineTrackLabel.displayName = "Timeline.Track.Label";
+
 interface TimelineTrackLayerBaseProps {
   id?: string;
   start: number;
   end: number;
   onResizeStart?: (e: React.MouseEvent) => void;
-  onResize?: (start: number, end: number, e: React.MouseEvent) => void;
+  onResize?: (
+    start: number,
+    end: number,
+    e: React.MouseEvent | React.KeyboardEvent
+  ) => void;
   onResizeEnd?: (e: React.MouseEvent) => void;
   onDragStart?: (e: React.MouseEvent) => void;
-  onDrag?: (start: number, end: number, e: React.MouseEvent) => void;
+  onDrag?: (
+    start: number,
+    end: number,
+    e: React.MouseEvent | React.KeyboardEvent
+  ) => void;
   onDragEnd?: (e: React.MouseEvent) => void;
   frames?: string[];
   resizable?: boolean;
@@ -1860,7 +1945,7 @@ const TimelineTrackLayer = forwardRef<HTMLDivElement, TimelineTrackLayerProps>(
       (
         newStart: number,
         newEnd: number,
-        e: React.MouseEvent
+        e: React.MouseEvent | React.KeyboardEvent
       ): { start: number; end: number } => {
         let constrainedStart = Math.max(0, newStart);
         let constrainedEnd = newEnd;
@@ -1920,7 +2005,11 @@ const TimelineTrackLayer = forwardRef<HTMLDivElement, TimelineTrackLayerProps>(
     );
 
     const handleLayerDrag = useCallback(
-      (newStart: number, newEnd: number, e: React.MouseEvent) => {
+      (
+        newStart: number,
+        newEnd: number,
+        e: React.MouseEvent | React.KeyboardEvent
+      ) => {
         const { start: constrainedStart, end: constrainedEnd } =
           applyLayerConstraints(newStart, newEnd, e);
         stableOnDrag?.(constrainedStart, constrainedEnd, e);
@@ -1929,7 +2018,11 @@ const TimelineTrackLayer = forwardRef<HTMLDivElement, TimelineTrackLayerProps>(
     );
 
     const handleLayerResize = useCallback(
-      (newStart: number, newEnd: number, e: React.MouseEvent) => {
+      (
+        newStart: number,
+        newEnd: number,
+        e: React.MouseEvent | React.KeyboardEvent
+      ) => {
         const { start: constrainedStart, end: constrainedEnd } =
           applyLayerConstraints(newStart, newEnd, e);
         onResize?.(constrainedStart, constrainedEnd, e);
@@ -1964,17 +2057,17 @@ const TimelineTrackLayer = forwardRef<HTMLDivElement, TimelineTrackLayerProps>(
         startAutoScroll(scrollContainer, (scrollDelta) => {
           const { canScrollLeft, canScrollRight } =
             getScrollState(scrollContainer);
-          const isScrollingLeft = scrollDelta < 0;
-          const isScrollingRight = scrollDelta > 0;
+          const isScrollingLeft = scrollDelta.x < 0;
+          const isScrollingRight = scrollDelta.x > 0;
           const shouldAllowAutoScroll =
             (isScrollingLeft && canScrollLeft) ||
             (isScrollingRight && canScrollRight);
 
-          if (Math.abs(scrollDelta) > 0 && shouldAllowAutoScroll) {
+          if (Math.abs(scrollDelta.x) > 0 && shouldAllowAutoScroll) {
             const currentLeft = parseFloat(
               layer.style.left || `${msToPixels(start)}`
             );
-            const newLeft = currentLeft + scrollDelta;
+            const newLeft = currentLeft + scrollDelta.x;
             const newStartTime = pixelsToMs(newLeft);
             const newEndTime = newStartTime + layerDuration;
 
@@ -2171,16 +2264,16 @@ const TimelineTrackLayer = forwardRef<HTMLDivElement, TimelineTrackLayerProps>(
               const newEnd = newStart + layerDuration;
 
               const { start: constrainedStart, end: constrainedEnd } =
-                applyLayerConstraints(newStart, newEnd, e as any);
+                applyLayerConstraints(newStart, newEnd, e);
 
-              handleLayerDrag(constrainedStart, constrainedEnd, e as any);
+              handleLayerDrag(constrainedStart, constrainedEnd, e);
               announceChange(
                 `Layer moved to ${formatDurationDisplay(constrainedStart)}`
               );
             } else if ((e.ctrlKey || e.metaKey) && resizable) {
               e.preventDefault();
               const newStart = Math.max(0, start - moveStep);
-              handleLayerResize(newStart, end, e as any);
+              handleLayerResize(newStart, end, e);
             }
             break;
           case "ArrowRight":
@@ -2190,16 +2283,16 @@ const TimelineTrackLayer = forwardRef<HTMLDivElement, TimelineTrackLayerProps>(
               const newEnd = newStart + layerDuration;
 
               const { start: constrainedStart, end: constrainedEnd } =
-                applyLayerConstraints(newStart, newEnd, e as any);
+                applyLayerConstraints(newStart, newEnd, e);
 
-              handleLayerDrag(constrainedStart, constrainedEnd, e as any);
+              handleLayerDrag(constrainedStart, constrainedEnd, e);
               announceChange(
                 `Layer moved to ${formatDurationDisplay(constrainedStart)}`
               );
             } else if ((e.ctrlKey || e.metaKey) && resizable) {
               e.preventDefault();
               const newEnd = end + moveStep;
-              handleLayerResize(start, newEnd, e as any);
+              handleLayerResize(start, newEnd, e);
             }
             break;
           case "Enter":
@@ -2371,11 +2464,16 @@ interface TimelineTrackLayerTooltipProps {
 const TimelineTrackLayerTooltip = ({
   children,
   portal = true,
-  container = document.body,
+  container,
 }: TimelineTrackLayerTooltipProps) => {
   const { start, end, tooltipState } = useLayerContext();
 
   if (!tooltipState?.showTooltip) return null;
+
+  const targetContainer =
+    container ?? (typeof document !== "undefined" ? document.body : null);
+
+  if (!targetContainer) return null;
 
   const tooltipContent = (
     <div
@@ -2395,11 +2493,12 @@ const TimelineTrackLayerTooltip = ({
   );
 
   if (portal) {
-    return createPortal(tooltipContent, container);
+    return createPortal(tooltipContent, targetContainer);
   }
 
   return tooltipContent;
 };
+
 TimelineTrackLayerTooltip.displayName = "Timeline.Track.LayerTooltip";
 
 export const Timeline = {
@@ -2414,9 +2513,14 @@ export const Timeline = {
     Overlay: TimelineReorderOverlay,
   }),
   Track: Object.assign(TimelineTrack, {
-    Layer: TimelineTrackLayer,
+    Layer: Object.assign(TimelineTrackLayer, {
+      Tooltip: TimelineTrackLayerTooltip,
+    }),
+    Label: TimelineTrackLabel,
   }),
 };
+
+TimelineTrackLayerTooltip;
 
 export type {
   TimelineRootProps,
@@ -2431,4 +2535,5 @@ export type {
   TimelineTrackLayerProps,
   TimelineTrackLayerTooltipProps,
   TimelineResizeHandleProps,
+  TimelineTrackLabelProps,
 };

@@ -1,27 +1,31 @@
 import { useCallback, useState } from "react";
 
-interface UseComposableStateOptions<T> {
+type OnChangeHandler<T, ExtraArgs extends any[] = []> = (
+  value: T,
+  ...args: ExtraArgs
+) => void;
+
+interface UseComposableStateOptions<T, ExtraArgs extends any[] = []> {
   defaultValue: T;
   controlled?: T;
-  onChange?: (value: T) => void;
+  onChange?: OnChangeHandler<T, ExtraArgs>;
 }
 
 /**
  * Creates a controllable state that can be either controlled or uncontrolled
  * Similar to React's built-in controlled/uncontrolled pattern
  */
-
-export function useComposableState<T>({
+export function useComposableState<T, ExtraArgs extends any[] = []>({
   defaultValue,
   controlled,
   onChange,
-}: UseComposableStateOptions<T>) {
+}: UseComposableStateOptions<T, ExtraArgs>) {
   const [internalValue, setInternalValue] = useState(defaultValue);
   const isControlled = controlled !== undefined;
   const value = isControlled ? controlled : internalValue;
 
   const setValue = useCallback(
-    (newValue: T | ((prev: T) => T)) => {
+    (newValue: T | ((prev: T) => T), ...args: ExtraArgs) => {
       const resolvedValue =
         typeof newValue === "function"
           ? (newValue as (prev: T) => T)(value)
@@ -31,7 +35,7 @@ export function useComposableState<T>({
         setInternalValue(resolvedValue);
       }
 
-      onChange?.(resolvedValue);
+      onChange?.(resolvedValue, ...args);
     },
     [isControlled, value, onChange]
   );

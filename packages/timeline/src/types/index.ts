@@ -1,3 +1,5 @@
+import { ResizeEndEvent, ResizeEvent, ResizeStartEvent } from "./event";
+
 interface ConstraintContext {
   currentTime: number;
   leftHandlePosition: number;
@@ -8,11 +10,13 @@ interface ConstraintContext {
   currentTrackId?: string;
 }
 
+type LayerSegment = Pick<LayerContextValue, "id" | "start" | "end">;
+type TrackSegment = Pick<TrackContextValue, "id">["id"];
+
 interface LayerConstraintContext {
-  allLayers: LayerContextValue[];
-  currentLayer: LayerContextValue;
-  tracks: Map<string, TrackContextValue>;
-  timeline: TimelineContextValue;
+  allLayers: LayerSegment[];
+  currentLayer: LayerSegment;
+  tracks: Map<string, TrackSegment>;
 }
 
 interface TimelineRootProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -106,7 +110,7 @@ interface TimelineContextValue {
   focusRightHandle: () => void;
 
   // Scale utilities
-  pxPerMsRef: React.RefObject<number>;
+  pxPerMs: number;
   recalcScale: () => void;
 
   // Internal utilities
@@ -167,9 +171,9 @@ interface LayerContextValue {
   id: string;
   start: number;
   end: number;
-  onResizeStart?: (e: React.MouseEvent) => void;
-  onResize?: (start: number, end: number, e: React.MouseEvent) => void;
-  onResizeEnd?: (e: React.MouseEvent) => void;
+  onResizeStart?: ResizeStartEvent;
+  onResize?: ResizeEvent;
+  onResizeEnd?: ResizeEndEvent;
 
   // Tooltip state
   tooltipState: {

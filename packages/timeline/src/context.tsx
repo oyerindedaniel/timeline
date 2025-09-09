@@ -25,6 +25,7 @@ import type {
   TrackProviderProps,
   ReorderContextValue,
 } from "./types";
+import { ResizeEndEvent, ResizeEvent, ResizeStartEvent } from "./types/event";
 
 const TimelineContext = createContext<TimelineContextValue | null>(null);
 const TrackContext = createContext<TrackContextValue | null>(null);
@@ -75,7 +76,7 @@ export function TimelineRootProvider({
   scaleConfig,
   autoScrollConfig,
 }: TimelineRootProps) {
-  const DEFAULT_TIMELINE_MAX = 100_000;
+  const DEFAULT_TIMELINE_MAX = 10_000;
 
   const [currentTime, setCurrentTime] = useComposableState({
     defaultValue: defaultCurrentTime,
@@ -97,10 +98,7 @@ export function TimelineRootProvider({
   const [min] = useState(0);
   const [max, setMax] = useState(DEFAULT_TIMELINE_MAX);
 
-  const finalMax = Math.max(
-    max,
-    timelineBounds === Infinity ? max : timelineBounds
-  );
+  const finalMax = Math.max(max, timelineBounds);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -132,7 +130,7 @@ export function TimelineRootProvider({
       }
     : defaultScaleConfig;
 
-  const { pxPerMsRef, recalc } = useScale({
+  const { pxPerMs, recalc } = useScale({
     containerRef,
     durationMs: finalMax,
     ...finalScaleConfig,
@@ -242,8 +240,8 @@ export function TimelineRootProvider({
     [min, finalMax, setCurrentTime, announceChange]
   );
 
-  const msToPixels = useCallback((ms: number) => ms * pxPerMsRef.current, []);
-  const pixelsToMs = useCallback((px: number) => px / pxPerMsRef.current, []);
+  const msToPixels = useCallback((ms: number) => ms * pxPerMs, [pxPerMs]);
+  const pixelsToMs = useCallback((px: number) => px / pxPerMs, [pxPerMs]);
   const clampTime = useCallback(
     (time: number) => Math.max(min, Math.min(finalMax, time)),
     [min, finalMax]
@@ -287,7 +285,7 @@ export function TimelineRootProvider({
       focusPlayhead,
       focusLeftHandle,
       focusRightHandle,
-      pxPerMsRef,
+      pxPerMs,
       recalcScale: recalc,
       handleAutoScroll,
       startAutoScroll,
@@ -327,6 +325,7 @@ export function TimelineRootProvider({
       focusLeftHandle,
       focusRightHandle,
       recalc,
+      pxPerMs,
       handleAutoScroll,
       startAutoScroll,
       stopAutoScroll,
@@ -412,7 +411,7 @@ export function TrackProvider({
     ]
   );
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     timeline.registerTrack(id, contextValue);
     return () => timeline.unregisterTrack(id);
   }, [id, contextValue, timeline]);
@@ -430,9 +429,10 @@ interface LayerProviderProps {
   id?: string;
   start: number;
   end: number;
-  onResizeStart?: (e: React.MouseEvent) => void;
-  onResize?: (start: number, end: number, e: React.MouseEvent) => void;
-  onResizeEnd?: (e: React.MouseEvent) => void;
+  onResizeStart?: ResizeStartEvent;
+  onResize?: ResizeEvent;
+  onResizeEnd?: ResizeEndEvent;
+
   tooltipState: {
     showTooltip: boolean;
     mousePosition: { x: number; y: number };
@@ -479,7 +479,7 @@ export function LayerProvider({
     ]
   );
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     track.registerLayer(id, contextValue);
     return () => track.unregisterLayer(id);
   }, [id, contextValue, track]);

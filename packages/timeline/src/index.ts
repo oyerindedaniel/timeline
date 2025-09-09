@@ -7,3 +7,4 @@ export * from "./timeline-hooks";
 // Timeline component/types
 export * from "./timeline";
 export type { LayerConstraintContext, ConstraintContext } from "./types";
+export type * from "./types/event";

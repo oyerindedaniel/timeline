@@ -4,7 +4,6 @@ import React, { useState, useCallback, useMemo } from "react";
 import {
   ConstraintContext,
   DragMoveArgs,
-  DragMoveEvent,
   LayerConstraintContext,
   Timeline,
   formatDurationDisplay,
@@ -16,9 +15,9 @@ const VideoEditorExample = () => {
   const [currentTime, setCurrentTime] = useState(5000);
   const [selectedTrack, setSelectedTrack] = useState<string>("");
   const [videoLayers, setVideoLayers] = useState([
-    { id: "intro", start: 0, end: 8000, type: "video" },
-    { id: "main", start: 8500, end: 25000, type: "video" },
-    { id: "outro", start: 25500, end: 30000, type: "video" },
+    { id: "intro", start: 0, end: 2000, type: "video" },
+    // { id: "main", start: 8500, end: 25000, type: "video" },
+    // { id: "outro", start: 25500, end: 30000, type: "video" },
   ]);
   const [audioLayers, setAudioLayers] = useState([
     { id: "music", start: 0, end: 30000, type: "audio" },
@@ -109,7 +108,7 @@ const VideoEditorExample = () => {
         step={100}
       >
         <Timeline.Content>
-          <Timeline.Ruler className="bg-gray-100" />
+          <Timeline.Ruler className="bg-gray-100 " />
           <Timeline.Playhead />
 
           {/* Video Track */}
@@ -120,14 +119,14 @@ const VideoEditorExample = () => {
             onSelect={setSelectedTrack}
             onConstrainLayer={handleLayerConstraint}
           >
+            <Timeline.Track.Label>Track 1</Timeline.Track.Label>
             {videoLayers.map((layer) => (
               <Timeline.Track.Layer
                 key={layer.id}
                 id={layer.id}
                 start={layer.start}
                 end={layer.end}
-                onDrag={updateVideoLayer}
-                onResize={updateVideoLayer}
+                // onDrag={updateVideoLayer}
                 className="bg-blue-200 border-blue-400"
               >
                 <div className="px-2 py-1 text-xs font-medium text-blue-800 truncate">
@@ -159,7 +158,7 @@ const VideoEditorExample = () => {
                 start={layer.start}
                 end={layer.end}
                 onDrag={updateAudioLayer}
-                onResize={updateAudioLayer}
+                // onResize={updateAudioLayer}
                 className="bg-green-200 border-green-400"
               >
                 <div className="px-2 py-1 text-xs font-medium text-green-800 truncate">

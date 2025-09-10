@@ -14,7 +14,7 @@ import { useScale } from "./timeline-hooks/use-scale";
 import { useLazyRef } from "./hooks/use-lazy-ref";
 import { useStableHandler } from "./hooks/use-stable-handler";
 import { formatDurationDisplay } from "./utils/display";
-import { useComposableState } from "./hooks";
+import { useControllableState } from "./hooks";
 import { generateTimelineId } from "./utils/generate-id";
 import type {
   LayerContextValue,
@@ -59,6 +59,8 @@ export function useLayerContext() {
 
 export function TimelineRootProvider({
   children,
+  timelineId,
+  instructionsId,
   currentTime: controlledTime,
   defaultCurrentTime = 0,
   onTimeChange,
@@ -78,13 +80,13 @@ export function TimelineRootProvider({
 }: TimelineRootProps) {
   const DEFAULT_TIMELINE_MAX = 10_000;
 
-  const [currentTime, setCurrentTime] = useComposableState({
+  const [currentTime, setCurrentTime] = useControllableState({
     defaultValue: defaultCurrentTime,
     controlled: controlledTime,
     onChange: onTimeChange,
   });
 
-  const [zoom, setZoom] = useComposableState({
+  const [zoom, setZoom] = useControllableState({
     defaultValue: defaultZoom,
     controlled: controlledZoom,
     onChange: onZoomChange,
@@ -95,10 +97,10 @@ export function TimelineRootProvider({
   const [rightHandlePosition, setRightHandlePosition] =
     useState(DEFAULT_TIMELINE_MAX);
 
-  const [min] = useState(0);
+  const min = 0;
   const [max, setMax] = useState(DEFAULT_TIMELINE_MAX);
 
-  const finalMax = Math.max(max, timelineBounds);
+  const actualMaxLayerEndRef = useRef(DEFAULT_TIMELINE_MAX);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -106,9 +108,6 @@ export function TimelineRootProvider({
   const rightHandleRef = useRef<HTMLDivElement | null>(null);
   const playheadRef = useRef<HTMLDivElement | null>(null);
   const announcementRef = useRef<HTMLDivElement>(null);
-
-  const timelineId = useId();
-  const instructionsId = useId();
 
   const tracks = useLazyRef(() => new Map<string, Track>());
 
@@ -132,7 +131,7 @@ export function TimelineRootProvider({
 
   const { pxPerMs, recalc } = useScale({
     containerRef,
-    durationMs: finalMax,
+    durationMs: max,
     ...finalScaleConfig,
   });
 
@@ -148,21 +147,64 @@ export function TimelineRootProvider({
     finalAutoScrollConfig
   );
 
-  const recalculateBounds = useCallback(() => {
-    let maxDuration = DEFAULT_TIMELINE_MAX;
+  const initializeBounds = useCallback(() => {
+    let maxLayerEnd = DEFAULT_TIMELINE_MAX;
 
     for (const track of tracks.current.values()) {
       for (const layer of track.layers.values()) {
-        maxDuration = Math.max(maxDuration, layer.end);
+        maxLayerEnd = Math.max(maxLayerEnd, layer.end);
       }
     }
 
-    setMax(maxDuration);
+    actualMaxLayerEndRef.current = maxLayerEnd;
 
-    requestAnimationFrame(() => {
+    setMax(maxLayerEnd);
+
+    requestAnimationFrame(function () {
       recalc();
     });
-  }, [recalc]);
+  }, [recalc, timelineBounds]);
+
+  const updateMaxIfNeeded = useCallback(
+    (newEnd: number) => {
+      const currentDisplayMax = max;
+      const effectiveTimelineBounds =
+        timelineBounds === Infinity ? Infinity : timelineBounds;
+
+      if (
+        newEnd > currentDisplayMax &&
+        (effectiveTimelineBounds === Infinity ||
+          newEnd <= effectiveTimelineBounds)
+      ) {
+        const bufferGrowth = Math.min(2000, newEnd * 0.1);
+        const newDisplayMax = newEnd + bufferGrowth;
+
+        setMax(newDisplayMax);
+
+        actualMaxLayerEndRef.current = Math.max(
+          actualMaxLayerEndRef.current,
+          newEnd
+        );
+
+        requestAnimationFrame(() => {
+          recalc();
+        });
+      }
+    },
+    [max, timelineBounds, recalc]
+  );
+
+  const getConstraintBounds = useCallback(() => {
+    const effectiveTimelineBounds =
+      timelineBounds === Infinity
+        ? Infinity
+        : Math.max(timelineBounds, actualMaxLayerEndRef.current);
+
+    return {
+      min: 0,
+      max: effectiveTimelineBounds,
+    };
+  }, [timelineBounds]);
 
   const getTrackAtPosition = useCallback(
     (x: number, y: number): string | null => {
@@ -198,17 +240,17 @@ export function TimelineRootProvider({
         isBeingDragged: false,
       };
       tracks.current.set(id, extendedTrack);
-      recalculateBounds();
+      initializeBounds();
     },
-    [recalculateBounds]
+    [initializeBounds]
   );
 
   const unregisterTrack = useCallback(
     (id: string) => {
       tracks.current.delete(id);
-      recalculateBounds();
+      initializeBounds();
     },
-    [recalculateBounds]
+    [initializeBounds]
   );
 
   const announceChange = useCallback((message: string) => {
@@ -233,18 +275,18 @@ export function TimelineRootProvider({
 
   const handleTimeChange = useCallback(
     (time: number, e: React.SyntheticEvent) => {
-      const clampedTime = Math.max(min, Math.min(finalMax, time));
+      const clampedTime = Math.max(min, Math.min(max, time));
       setCurrentTime(clampedTime, e);
       announceChange(`Time changed to ${formatDurationDisplay(clampedTime)}`);
     },
-    [min, finalMax, setCurrentTime, announceChange]
+    [min, max, setCurrentTime, announceChange]
   );
 
   const msToPixels = useCallback((ms: number) => ms * pxPerMs, [pxPerMs]);
   const pixelsToMs = useCallback((px: number) => px / pxPerMs, [pxPerMs]);
   const clampTime = useCallback(
-    (time: number) => Math.max(min, Math.min(finalMax, time)),
-    [min, finalMax]
+    (time: number) => Math.max(min, Math.min(max, time)),
+    [min, max]
   );
 
   React.useEffect(() => {
@@ -260,7 +302,7 @@ export function TimelineRootProvider({
   const contextValue: TimelineContextValue = useMemo(
     () => ({
       min,
-      max: finalMax,
+      max,
       timelineBounds,
       zoom,
       setZoom,
@@ -273,7 +315,10 @@ export function TimelineRootProvider({
       registerTrack,
       unregisterTrack,
       getTrackAtPosition,
-      recalculateBounds,
+      initializeBounds,
+      updateMaxIfNeeded,
+      getConstraintBounds,
+      actualMaxLayerEnd: actualMaxLayerEndRef.current,
       containerRef,
       scrollContainerRef,
       leftHandleRef,
@@ -305,7 +350,7 @@ export function TimelineRootProvider({
     }),
     [
       min,
-      finalMax,
+      max,
       timelineBounds,
       zoom,
       setZoom,
@@ -317,7 +362,9 @@ export function TimelineRootProvider({
       registerTrack,
       unregisterTrack,
       getTrackAtPosition,
-      recalculateBounds,
+      initializeBounds,
+      updateMaxIfNeeded,
+      getConstraintBounds,
       timelineId,
       instructionsId,
       announceChange,
@@ -374,7 +421,7 @@ export function TrackProvider({
   const registerLayer = useCallback(
     (layerId: string, layer: LayerContextValue) => {
       layers.current.set(layerId, layer);
-      timeline.recalculateBounds();
+      timeline.initializeBounds();
     },
     [timeline]
   );
@@ -382,7 +429,7 @@ export function TrackProvider({
   const unregisterLayer = useCallback(
     (layerId: string) => {
       layers.current.delete(layerId);
-      timeline.recalculateBounds();
+      timeline.initializeBounds();
     },
     [timeline]
   );
@@ -429,9 +476,6 @@ interface LayerProviderProps {
   id?: string;
   start: number;
   end: number;
-  onResizeStart?: ResizeStartEvent;
-  onResize?: ResizeEvent;
-  onResizeEnd?: ResizeEndEvent;
 
   tooltipState: {
     showTooltip: boolean;
@@ -444,9 +488,6 @@ export function LayerProvider({
   id: providedId,
   start: rawStart,
   end,
-  onResizeStart,
-  onResize,
-  onResizeEnd,
   tooltipState,
 }: LayerProviderProps) {
   const track = useTrackContext();
@@ -454,29 +495,14 @@ export function LayerProvider({
   const id = providedId ?? generateTimelineId("layer");
   const start = Math.max(0, rawStart);
 
-  const stableOnResizeStart = useStableHandler(onResizeStart);
-  const stableOnResize = useStableHandler(onResize);
-  const stableOnResizeEnd = useStableHandler(onResizeEnd);
-
   const contextValue: LayerContextValue = useMemo(
     () => ({
       id,
       start,
       end,
-      onResizeStart: stableOnResizeStart,
-      onResize: stableOnResize,
-      onResizeEnd: stableOnResizeEnd,
       tooltipState,
     }),
-    [
-      id,
-      start,
-      end,
-      stableOnResizeStart,
-      stableOnResize,
-      stableOnResizeEnd,
-      tooltipState,
-    ]
+    [id, start, end, tooltipState]
   );
 
   React.useLayoutEffect(() => {

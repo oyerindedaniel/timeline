@@ -24,9 +24,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      {/* <head>
+      <head>
         <script src="https://unpkg.com/react-scan/dist/auto.global.js" async />
-      </head> */}
+      </head>
       <body
         className={cn(
           "font-sans tracking-tight",

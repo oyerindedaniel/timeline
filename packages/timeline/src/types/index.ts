@@ -1,4 +1,9 @@
-import { ResizeEndEvent, ResizeEvent, ResizeStartEvent } from "./event";
+import type {
+  ResizeEndEvent,
+  ResizeEvent,
+  ResizeStartEvent,
+  TimelineEvent,
+} from "./event";
 
 interface ConstraintContext {
   currentTime: number;
@@ -17,10 +22,13 @@ interface LayerConstraintContext {
   allLayers: LayerSegment[];
   currentLayer: LayerSegment;
   tracks: Map<string, TrackSegment>;
+  currentTrackId: string;
 }
 
 interface TimelineRootProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
+  timelineId: string;
+  instructionsId: string;
   currentTime?: number;
   defaultCurrentTime?: number;
   onTimeChange?: (time: number, e: React.SyntheticEvent) => void;
@@ -64,6 +72,7 @@ interface TimelineRootProps extends React.HTMLAttributes<HTMLDivElement> {
 interface TimelineContextValue {
   min: number;
   max: number;
+  actualMaxLayerEnd: number;
 
   // User configuration
   timelineBounds: number;
@@ -89,7 +98,12 @@ interface TimelineContextValue {
   getTrackAtPosition: (x: number, y: number) => string | null;
 
   // Dynamic bounds calculation
-  recalculateBounds: () => void;
+  initializeBounds: () => void;
+  updateMaxIfNeeded: (newEnd: number) => void;
+  getConstraintBounds: () => {
+    min: number;
+    max: number | typeof Infinity;
+  };
 
   // Zoom functionality
   setZoom: (zoom: number) => void;
@@ -171,9 +185,6 @@ interface LayerContextValue {
   id: string;
   start: number;
   end: number;
-  onResizeStart?: ResizeStartEvent;
-  onResize?: ResizeEvent;
-  onResizeEnd?: ResizeEndEvent;
 
   // Tooltip state
   tooltipState: {
@@ -211,6 +222,8 @@ interface ReorderContextValue {
   handleTrackDragStart: (trackId: string, e: React.MouseEvent) => void;
   orderedTrackIds: string[];
 }
+
+export type ResizeSide = "left" | "right";
 
 export type {
   ConstraintContext,

@@ -5,39 +5,42 @@ type OnChangeHandler<T, ExtraArgs extends any[] = []> = (
   ...args: ExtraArgs
 ) => void;
 
-interface UseComposableStateOptions<T, ExtraArgs extends any[] = []> {
+interface UseControllableStateOptions<T, ExtraArgs extends any[] = []> {
   defaultValue: T;
   controlled?: T;
   onChange?: OnChangeHandler<T, ExtraArgs>;
 }
 
 /**
- * Creates a controllable state that can be either controlled or uncontrolled
- * Similar to React's built-in controlled/uncontrolled pattern
+ * Creates a controllable state that can be either controlled or uncontrolled.
+ * - Controlled when `controlled` is defined.
+ * - Uncontrolled otherwise, starting from `defaultValue`.
  */
-export function useComposableState<T, ExtraArgs extends any[] = []>({
+export function useControllableState<T, ExtraArgs extends any[] = []>({
   defaultValue,
   controlled,
   onChange,
-}: UseComposableStateOptions<T, ExtraArgs>) {
+}: UseControllableStateOptions<T, ExtraArgs>) {
   const [internalValue, setInternalValue] = useState(defaultValue);
   const isControlled = controlled !== undefined;
   const value = isControlled ? controlled : internalValue;
 
   const setValue = useCallback(
     (newValue: T | ((prev: T) => T), ...args: ExtraArgs) => {
-      const resolvedValue =
+      const updater = (prev: T) =>
         typeof newValue === "function"
-          ? (newValue as (prev: T) => T)(value)
+          ? (newValue as (prev: T) => T)(prev)
           : newValue;
 
+      const resolvedValue = updater(value);
+
       if (!isControlled) {
-        setInternalValue(resolvedValue);
+        setInternalValue(updater);
       }
 
       onChange?.(resolvedValue, ...args);
     },
-    [isControlled, value, onChange]
+    [isControlled, onChange, value]
   );
 
   return [value, setValue] as const;

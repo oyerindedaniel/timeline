@@ -1,7 +1,20 @@
-export type TimelineMouseEvent = React.MouseEvent;
-export type TimelineKeyboardEvent = React.KeyboardEvent;
-export type TimelineEvent = TimelineMouseEvent | TimelineKeyboardEvent;
+import { ResizeSide } from ".";
 
+// =====================================
+// Event Primitives
+// =====================================
+export type TimelineMouseEvent<T = Element, E = MouseEvent> = React.MouseEvent<
+  T,
+  E
+>;
+export type TimelineKeyboardEvent<T = Element> = React.KeyboardEvent<T>;
+export type TimelineEvent<T = Element, E = MouseEvent | KeyboardEvent> =
+  | TimelineMouseEvent<T, E>
+  | TimelineKeyboardEvent<T>;
+
+// =====================================
+// Change Event Types
+// =====================================
 export type TimeChangeEvent = (time: number, event: TimelineEvent) => void;
 export type PositionChangeEvent = (
   position: number,
@@ -13,47 +26,55 @@ export type RangeChangeEvent = (
   event: TimelineEvent
 ) => void;
 
+// =====================================
+// Shared Context
+// =====================================
 interface LayerTrackContext {
   layerId: string;
   trackId: string;
 }
 
-interface TimelineEventContext extends LayerTrackContext {
-  event: TimelineEvent;
-}
-
-interface TimelineMouseEventContext extends LayerTrackContext {
-  event: TimelineMouseEvent;
-}
-
-export interface DragStartArgs extends TimelineMouseEventContext {}
-export interface DragMoveArgs extends TimelineEventContext {
-  start: number;
-  end: number;
-}
-export interface DragEndArgs extends TimelineMouseEventContext {}
+// =====================================
+// Drag Events (all include range + context)
+// =====================================
+export type DragStartArgs = WithRange<
+  { event: TimelineMouseEvent } & LayerTrackContext
+>;
+export type DragMoveArgs = WithRange<LayerTrackContext>;
+export type DragEndArgs = WithRange<LayerTrackContext>;
 
 export type DragStartEvent = (args: DragStartArgs) => void;
 export type DragMoveEvent = (args: DragMoveArgs) => void;
 export type DragEndEvent = (args: DragEndArgs) => void;
 
-export interface ResizeStartArgs extends TimelineMouseEventContext {}
-export interface ResizeArgs extends TimelineEventContext {
-  start: number;
-  end: number;
-}
-export interface ResizeEndArgs extends TimelineMouseEventContext {}
+// =====================================
+// Resize Events
+// =====================================
+export type ResizeStartArgs = WithRange<
+  { event: TimelineMouseEvent; side: ResizeSide } & LayerTrackContext
+>;
+export type ResizeArgs = WithRange<LayerTrackContext>;
+export type ResizeEndArgs = WithRange<LayerTrackContext>;
 
 export type ResizeStartEvent = (args: ResizeStartArgs) => void;
 export type ResizeEvent = (args: ResizeArgs) => void;
 export type ResizeEndEvent = (args: ResizeEndArgs) => void;
 
+// =====================================
+// Move Events
+// =====================================
 export type MoveStartEvent = (event: TimelineMouseEvent) => void;
 export type MoveEvent = (position: number, event: TimelineEvent) => void;
 export type MoveEndEvent = (event: TimelineMouseEvent) => void;
 
+// =====================================
+// Selection Event
+// =====================================
 export type SelectionEvent = (id: string, event: TimelineEvent) => void;
 
+// =====================================
+// Reorder Event
+// =====================================
 export type ReorderEvent = (
   reorderedIds: string[],
   movedId: string,
@@ -61,7 +82,7 @@ export type ReorderEvent = (
   toIndex: number
 ) => void;
 
-export type ResizeHandleStartEvent = (
-  event: TimelineMouseEvent,
-  side: "left" | "right"
-) => void;
+// =====================================
+// Utility Types
+// =====================================
+export type WithRange<T = {}> = T & { start: number; end: number };
